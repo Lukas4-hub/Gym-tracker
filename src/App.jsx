@@ -142,7 +142,7 @@ export default function App() {
         >
           <div>
             <p className="eyebrow">Gym tracker</p>
-            <h1>Idas al gym 2026</h1>
+            <h1>Asistencias al gym 2026</h1>
           
           </div>
           <div className="hero-icon-wrap">
@@ -161,7 +161,7 @@ export default function App() {
           <div className="stat-card">
             <div className="stat-top">
               <Dumbbell size={18} />
-              <span>Idas totales</span>
+              <span>Asistencias totales</span>
             </div>
             <div className="stat-value">{totalVisits}</div>
           </div>
@@ -226,7 +226,7 @@ export default function App() {
                   >
                     <div className="person-info">
                       <div className="person-name">{person.name}</div>
-                      <div className="person-subtitle">{person.visits} idas registradas</div>
+                      <div className="person-subtitle">{person.visits} asistencias registradas</div>
                     </div>
 
                     <div className="person-actions">

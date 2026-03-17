@@ -4,6 +4,29 @@ import { Plus, Minus, Trash2, Search, Dumbbell, Trophy, Users } from 'lucide-rea
 import { supabase } from './supabase'
 import './App.css'
 
+const YEAR_KEYS = ['visits_2022', 'visits_2023', 'visits_2024', 'visits_2025', 'visits_2026']
+const YEAR_LABELS = {
+  visits_2022: '2022',
+  visits_2023: '2023',
+  visits_2024: '2024',
+  visits_2025: '2025',
+  visits_2026: '2026'
+}
+
+function getTotalVisits(person) {
+  return YEAR_KEYS.reduce((acc, key) => acc + (Number(person[key]) || 0), 0)
+}
+
+function getGroupYearTotals(people) {
+  return {
+    visits_2022: people.reduce((acc, person) => acc + (Number(person.visits_2022) || 0), 0),
+    visits_2023: people.reduce((acc, person) => acc + (Number(person.visits_2023) || 0), 0),
+    visits_2024: people.reduce((acc, person) => acc + (Number(person.visits_2024) || 0), 0),
+    visits_2025: people.reduce((acc, person) => acc + (Number(person.visits_2025) || 0), 0),
+    visits_2026: people.reduce((acc, person) => acc + (Number(person.visits_2026) || 0), 0)
+  }
+}
+
 export default function App() {
   const [newName, setNewName] = useState('')
   const [search, setSearch] = useState('')
@@ -12,13 +35,19 @@ export default function App() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  const groupYearTotals = getGroupYearTotals(people)
+const historicalTotal = YEAR_KEYS.reduce(
+  (acc, key) => acc + (Number(groupYearTotals[key]) || 0),
+  0
+)
+
   async function loadPeople() {
     setLoading(true)
     setError('')
     const { data, error } = await supabase
       .from('gym_people')
       .select('*')
-      .order('visits', { ascending: false })
+      .eq('deleted', false)
       .order('name', { ascending: true })
     if (error) {
       setError('No se pudieron cargar los datos.')
@@ -45,7 +74,12 @@ export default function App() {
     setError('')
     const { error } = await supabase.from('gym_people').insert({
       name: trimmed,
-      visits: 0
+      visits_2022: 0,
+      visits_2023: 0,
+      visits_2024: 0,
+      visits_2025: 0,
+      visits_2026: 0,
+      deleted: false
     })
     if (error) {
       setError('No se pudo agregar la persona.')
@@ -61,7 +95,10 @@ export default function App() {
     if (saving) return
     setSaving(true)
     setError('')
-    const { error } = await supabase.from('gym_people').delete().eq('id', id)
+    const { error } = await supabase
+      .from('gym_people')
+      .update({ deleted: true })
+      .eq('id', id)
     if (error) {
       setError('No se pudo eliminar la persona.')
       setSaving(false)
@@ -71,16 +108,16 @@ export default function App() {
     setSaving(false)
   }
 
-  async function changeVisits(id, delta) {
+  async function changeVisits(id, field, delta) {
     if (saving) return
     const current = people.find((person) => person.id === id)
     if (!current) return
-    const nextVisits = Math.max(0, current.visits + delta)
+    const nextVisits = Math.max(0, (Number(current[field]) || 0) + delta)
     setSaving(true)
     setError('')
     const { error } = await supabase
       .from('gym_people')
-      .update({ visits: nextVisits })
+      .update({ [field]: nextVisits })
       .eq('id', id)
     if (error) {
       setError('No se pudo actualizar el contador.')
@@ -91,17 +128,17 @@ export default function App() {
     setSaving(false)
   }
 
-  async function editVisits(id, value) {
+  function editVisitsLocal(id, field, value) {
     const parsed = Number(value)
     const nextVisits = Number.isNaN(parsed) ? 0 : Math.max(0, Math.floor(parsed))
     setPeople((prev) =>
       prev.map((person) =>
-        person.id === id ? { ...person, visits: nextVisits } : person
+        person.id === id ? { ...person, [field]: nextVisits } : person
       )
     )
   }
 
-  async function saveVisits(id, value) {
+  async function saveVisits(id, field, value) {
     if (saving) return
     const parsed = Number(value)
     const nextVisits = Number.isNaN(parsed) ? 0 : Math.max(0, Math.floor(parsed))
@@ -109,7 +146,7 @@ export default function App() {
     setError('')
     const { error } = await supabase
       .from('gym_people')
-      .update({ visits: nextVisits })
+      .update({ [field]: nextVisits })
       .eq('id', id)
     if (error) {
       setError('No se pudo guardar el valor.')
@@ -123,12 +160,12 @@ export default function App() {
   const filteredPeople = useMemo(() => {
     return [...people]
       .filter((person) => person.name.toLowerCase().includes(search.toLowerCase()))
-      .sort((a, b) => b.visits - a.visits || a.name.localeCompare(b.name))
+      .sort((a, b) => getTotalVisits(b) - getTotalVisits(a) || a.name.localeCompare(b.name))
   }, [people, search])
 
-  const totalVisits = people.reduce((acc, person) => acc + person.visits, 0)
+  const totalVisits = people.reduce((acc, person) => acc + getTotalVisits(person), 0)
   const leader = people.length
-    ? [...people].sort((a, b) => b.visits - a.visits || a.name.localeCompare(b.name))[0]
+    ? [...people].sort((a, b) => getTotalVisits(b) - getTotalVisits(a) || a.name.localeCompare(b.name))[0]
     : null
 
   return (
@@ -143,7 +180,7 @@ export default function App() {
           <div>
             <p className="eyebrow">Gym tracker</p>
             <h1>Asistencias al gym 2026</h1>
-          
+       
           </div>
           <div className="hero-icon-wrap">
             <Dumbbell size={40} />
@@ -171,10 +208,51 @@ export default function App() {
               <span>Líder</span>
             </div>
             <div className="stat-value small">{leader ? leader.name : 'Sin datos'}</div>
-            <div className="stat-subtitle">{leader ? `${leader.visits} idas` : 'Todavía no hay personas'}</div>
+            <div className="stat-subtitle">{leader ? `${getTotalVisits(leader)} asistencias acumuladas` : 'Todavía no hay personas'}</div>
           </div>
         </div>
-
+        <div className="card summary-card">
+  <h2>Tabla general de asistencias</h2>
+  <div className="summary-table-wrap">
+    <table className="summary-table">
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>2022</th>
+          <th>2023</th>
+          <th>2024</th>
+          <th>2025</th>
+          <th>2026</th>
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {filteredPeople.map((person) => (
+          <tr key={person.id}>
+            <td>{person.name}</td>
+            <td>{person.visits_2022 || 0}</td>
+            <td>{person.visits_2023 || 0}</td>
+            <td>{person.visits_2024 || 0}</td>
+            <td>{person.visits_2025 || 0}</td>
+            <td>{person.visits_2026 || 0}</td>
+            <td>{getTotalVisits(person)}</td>
+          </tr>
+        ))}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td>Total </td>
+          <td>{people.reduce((acc, person) => acc + (Number(person.visits_2022) || 0), 0)}</td>
+          <td>{people.reduce((acc, person) => acc + (Number(person.visits_2023) || 0), 0)}</td>
+          <td>{people.reduce((acc, person) => acc + (Number(person.visits_2024) || 0), 0)}</td>
+          <td>{people.reduce((acc, person) => acc + (Number(person.visits_2025) || 0), 0)}</td>
+          <td>{people.reduce((acc, person) => acc + (Number(person.visits_2026) || 0), 0)}</td>
+          <td>{people.reduce((acc, person) => acc + getTotalVisits(person), 0)}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
         <div className="main-grid">
           <div className="panel card">
             <h2>Agregar persona</h2>
@@ -209,7 +287,7 @@ export default function App() {
           </div>
 
           <div className="panel card">
-            <h2>Asistencias</h2>
+            <h2>Asistencias por año</h2>
             <div className="people-list">
               {loading ? (
                 <div className="empty-state">Cargando datos...</div>
@@ -222,31 +300,40 @@ export default function App() {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.2, delay: index * 0.03 }}
-                    className="person-row"
+                    className="person-card"
                   >
-                    <div className="person-info">
-                      <div className="person-name">{person.name}</div>
-                      <div className="person-subtitle">{person.visits} asistencias registradas</div>
-                    </div>
-
-                    <div className="person-actions">
-                      <button className="icon-btn" onClick={() => changeVisits(person.id, -1)} disabled={saving}>
-                        <Minus size={18} />
-                      </button>
-                      <button className="icon-btn" onClick={() => changeVisits(person.id, 1)} disabled={saving}>
-                        <Plus size={18} />
-                      </button>
-                      <input
-                        className="counter-input"
-                        type="number"
-                        min="0"
-                        value={person.visits}
-                        onChange={(e) => editVisits(person.id, e.target.value)}
-                        onBlur={(e) => saveVisits(person.id, e.target.value)}
-                      />
+                    <div className="person-header">
+                      <div className="person-info">
+                        <div className="person-name">{person.name}</div>
+                        <div className="person-subtitle">{getTotalVisits(person)} asistencias acumuladas entre 2022 y 2026</div>
+                      </div>
                       <button className="delete-btn" onClick={() => removePerson(person.id)} disabled={saving}>
                         <Trash2 size={18} />
                       </button>
+                    </div>
+
+                    <div className="year-grid">
+                      {YEAR_KEYS.map((field) => (
+                        <div className="year-box" key={field}>
+                          <div className="year-title">{YEAR_LABELS[field]}</div>
+                          <div className="person-actions yearly-actions">
+                            <button className="icon-btn" onClick={() => changeVisits(person.id, field, -1)} disabled={saving}>
+                              <Minus size={18} />
+                            </button>
+                            <button className="icon-btn" onClick={() => changeVisits(person.id, field, 1)} disabled={saving}>
+                              <Plus size={18} />
+                            </button>
+                            <input
+                              className="counter-input"
+                              type="number"
+                              min="0"
+                              value={person[field] || 0}
+                              onChange={(e) => editVisitsLocal(person.id, field, e.target.value)}
+                              onBlur={(e) => saveVisits(person.id, field, e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </motion.div>
                 ))
